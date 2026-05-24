@@ -122,7 +122,7 @@ cd ~/db-espejo
 # Crear .env para la nube
 cat > .env << EOF
 DB_MIRROR_USER=mirror_admin
-DB_MIRROR_PASSWORD=Yy1"pI15}+6[
+DB_MIRROR_PASSWORD=MiPassWordNuve
 DB_NAME=resiliencia_db
 EOF
 
