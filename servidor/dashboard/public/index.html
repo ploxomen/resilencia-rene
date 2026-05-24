@@ -1,0 +1,720 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>RESILIENCIA — Panel de Control</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Exo+2:wght@300;400;600;800&display=swap" rel="stylesheet"/>
+<style>
+/* ═══════════════════════════════════════════════════
+   DESIGN SYSTEM — Cyberpunk Industrial
+═══════════════════════════════════════════════════ */
+:root {
+  --bg:         #080c10;
+  --surface:    #0d1520;
+  --surface2:   #111d2e;
+  --border:     #1a3a5c;
+  --accent:     #00d4ff;
+  --accent2:    #ff6b35;
+  --green:      #00ff88;
+  --red:        #ff2d55;
+  --yellow:     #ffcc00;
+  --text:       #c8e0f0;
+  --muted:      #4a6a8a;
+  --font-mono:  'Share Tech Mono', monospace;
+  --font-main:  'Exo 2', sans-serif;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-main);
+  font-size: 13px;
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+/* Grid noise overlay */
+body::before {
+  content: '';
+  position: fixed; inset: 0;
+  background-image:
+    repeating-linear-gradient(0deg, transparent, transparent 39px, rgba(0,212,255,.03) 39px, rgba(0,212,255,.03) 40px),
+    repeating-linear-gradient(90deg, transparent, transparent 39px, rgba(0,212,255,.03) 39px, rgba(0,212,255,.03) 40px);
+  pointer-events: none; z-index: 0;
+}
+
+/* ── HEADER ──────────────────────────────────────── */
+header {
+  position: relative; z-index: 10;
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 28px;
+  background: linear-gradient(90deg, #060a0e 0%, #0d1520 60%, #060a0e 100%);
+  border-bottom: 1px solid var(--border);
+  box-shadow: 0 2px 30px rgba(0,212,255,.08);
+}
+
+.logo {
+  display: flex; align-items: center; gap: 14px;
+}
+
+.logo-icon {
+  width: 38px; height: 38px;
+  border: 2px solid var(--accent);
+  border-radius: 6px;
+  display: grid; place-items: center;
+  font-size: 18px;
+  box-shadow: 0 0 12px rgba(0,212,255,.4), inset 0 0 12px rgba(0,212,255,.05);
+  animation: pulse-border 3s ease-in-out infinite;
+}
+
+@keyframes pulse-border {
+  0%,100% { box-shadow: 0 0 12px rgba(0,212,255,.4), inset 0 0 12px rgba(0,212,255,.05); }
+  50%      { box-shadow: 0 0 24px rgba(0,212,255,.7), inset 0 0 20px rgba(0,212,255,.1); }
+}
+
+.logo-text h1 {
+  font-size: 17px; font-weight: 800; letter-spacing: 3px;
+  color: var(--accent);
+  text-shadow: 0 0 20px rgba(0,212,255,.5);
+}
+.logo-text p {
+  font-size: 10px; letter-spacing: 2px; color: var(--muted);
+  font-family: var(--font-mono);
+}
+
+.header-right {
+  display: flex; align-items: center; gap: 20px;
+}
+
+.clock {
+  font-family: var(--font-mono); font-size: 14px;
+  color: var(--accent); letter-spacing: 2px;
+}
+
+.ws-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--red);
+  transition: background .3s;
+  box-shadow: 0 0 6px currentColor;
+}
+.ws-dot.connected { background: var(--green); }
+
+/* ── DB STATUS BANNER ────────────────────────────── */
+#db-banner {
+  position: relative; z-index: 10;
+  display: flex; align-items: center; justify-content: center; gap: 12px;
+  padding: 10px 28px;
+  font-family: var(--font-mono); font-size: 13px;
+  letter-spacing: 1px;
+  transition: all .5s;
+}
+#db-banner.primary {
+  background: linear-gradient(90deg, rgba(0,255,136,.05), rgba(0,255,136,.12), rgba(0,255,136,.05));
+  border-bottom: 1px solid rgba(0,255,136,.3);
+  color: var(--green);
+}
+#db-banner.mirror {
+  background: linear-gradient(90deg, rgba(255,45,85,.05), rgba(255,45,85,.12), rgba(255,45,85,.05));
+  border-bottom: 1px solid rgba(255,45,85,.3);
+  color: var(--red);
+  animation: blink-bg 1.5s ease-in-out infinite;
+}
+@keyframes blink-bg {
+  0%,100% { opacity: 1; } 50% { opacity: .75; }
+}
+.db-dot {
+  width: 10px; height: 10px; border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 10px currentColor;
+}
+
+/* ── MAIN GRID ───────────────────────────────────── */
+main {
+  position: relative; z-index: 1;
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  grid-template-rows: auto 1fr 1fr;
+  gap: 16px;
+  padding: 16px 20px;
+  height: calc(100vh - 98px);
+}
+
+/* ── CARD ────────────────────────────────────────── */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+  display: flex; flex-direction: column;
+  position: relative;
+}
+
+.card::before {
+  content: '';
+  position: absolute; top: 0; left: 0; right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--accent), transparent);
+  opacity: .6;
+}
+
+.card-header {
+  display: flex; align-items: center; gap: 8px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface2);
+}
+
+.card-header .icon { font-size: 14px; }
+
+.card-title {
+  font-size: 11px; font-weight: 600;
+  letter-spacing: 2px; text-transform: uppercase;
+  color: var(--accent);
+}
+
+.card-body {
+  flex: 1; overflow-y: auto; padding: 12px 14px;
+}
+
+.card-body::-webkit-scrollbar { width: 4px; }
+.card-body::-webkit-scrollbar-track { background: transparent; }
+.card-body::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+/* ── CONTAINER CARDS (top row, full width) ────────── */
+.containers-row {
+  grid-column: 1 / -1;
+  display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px;
+}
+
+.container-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 16px;
+  position: relative;
+  overflow: hidden;
+  transition: border-color .3s;
+}
+
+.container-card.up {
+  border-color: rgba(0,255,136,.35);
+}
+.container-card.up::before {
+  content: '';
+  position: absolute; top: 0; left: 0; right: 0; height: 2px;
+  background: var(--green);
+  box-shadow: 0 0 12px var(--green);
+}
+.container-card.down {
+  border-color: rgba(255,45,85,.35);
+}
+.container-card.down::before {
+  content: '';
+  position: absolute; top: 0; left: 0; right: 0; height: 2px;
+  background: var(--red);
+  box-shadow: 0 0 12px var(--red);
+}
+
+.c-name {
+  font-weight: 800; font-size: 14px; letter-spacing: 1px;
+  margin-bottom: 6px;
+}
+.c-status {
+  font-family: var(--font-mono); font-size: 11px;
+  display: flex; align-items: center; gap: 6px;
+}
+.status-dot {
+  width: 7px; height: 7px; border-radius: 50%;
+}
+.status-dot.up   { background: var(--green); box-shadow: 0 0 6px var(--green); }
+.status-dot.down { background: var(--red);   box-shadow: 0 0 6px var(--red); animation: blink 1s infinite; }
+@keyframes blink { 0%,100%{opacity:1} 50%{opacity:.2} }
+
+.c-sub { font-size: 10px; color: var(--muted); margin-top: 4px; font-family: var(--font-mono); }
+
+/* ── TOPOLOGY MINI-MAP ──────────────────────────── */
+.topology { grid-column: 1; grid-row: 2 / 4; }
+
+.topo-svg { width: 100%; padding: 10px 0; }
+
+/* ── BACKUP TABLE ───────────────────────────────── */
+.backups { grid-column: 2; grid-row: 2 / 4; }
+
+.backup-row {
+  display: grid;
+  grid-template-columns: 1fr 55px 55px;
+  gap: 6px;
+  padding: 8px 0;
+  border-bottom: 1px solid rgba(26,58,92,.5);
+  font-family: var(--font-mono); font-size: 11px;
+  animation: slide-in .3s ease;
+}
+@keyframes slide-in {
+  from { opacity: 0; transform: translateX(-8px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+.backup-row:last-child { border-bottom: none; }
+.backup-ts { color: var(--muted); }
+.backup-size { color: var(--yellow); text-align: right; }
+.backup-elapsed { color: var(--accent2); text-align: right; }
+.backup-ok  { color: var(--green); }
+.backup-err { color: var(--red); }
+
+.backup-header {
+  display: grid; grid-template-columns: 1fr 55px 55px;
+  gap: 6px; padding-bottom: 6px;
+  border-bottom: 1px solid var(--border);
+  font-size: 9px; letter-spacing: 1px; text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* ── EVENT LOG ──────────────────────────────────── */
+.events { grid-column: 3; grid-row: 2 / 4; }
+
+.log-entry {
+  display: flex; gap: 8px;
+  padding: 6px 0;
+  border-bottom: 1px solid rgba(26,58,92,.4);
+  font-family: var(--font-mono); font-size: 11px;
+  animation: slide-in .3s ease;
+}
+.log-entry:last-child { border-bottom: none; }
+
+.log-ts { color: var(--muted); white-space: nowrap; flex-shrink: 0; }
+.log-badge {
+  display: inline-block;
+  padding: 1px 6px; border-radius: 3px;
+  font-size: 9px; font-weight: 600; letter-spacing: 1px;
+  flex-shrink: 0; align-self: flex-start; margin-top: 1px;
+}
+.badge-backup    { background: rgba(0,212,255,.15); color: var(--accent); }
+.badge-failover  { background: rgba(255,45,85,.15);  color: var(--red); }
+.badge-container { background: rgba(255,107,53,.15); color: var(--accent2); }
+.badge-info      { background: rgba(74,106,138,.2);  color: var(--muted); }
+.badge-error     { background: rgba(255,45,85,.3);   color: var(--red); }
+
+.log-msg { flex: 1; color: var(--text); line-height: 1.4; }
+
+/* ── SCROLLBAR GLOBAL ───────────────────────────── */
+* { scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
+
+/* ── FAILOVER ALERT TOAST ───────────────────────── */
+#toast {
+  position: fixed; bottom: 24px; right: 24px;
+  background: var(--surface2);
+  border: 1px solid var(--red);
+  border-radius: 6px;
+  padding: 14px 20px;
+  font-family: var(--font-mono); font-size: 12px;
+  color: var(--red);
+  box-shadow: 0 0 30px rgba(255,45,85,.3);
+  z-index: 100;
+  transform: translateY(100px); opacity: 0;
+  transition: all .4s cubic-bezier(.175,.885,.32,1.275);
+  max-width: 320px;
+}
+#toast.show { transform: translateY(0); opacity: 1; }
+
+/* ── RESPONSIVE ─────────────────────────────────── */
+@media (max-width: 1100px) {
+  main { grid-template-columns: 1fr 1fr; }
+  .containers-row { grid-column: 1 / -1; grid-template-columns: repeat(2,1fr); }
+  .topology { grid-column: 1; grid-row: 2; }
+  .backups  { grid-column: 2; grid-row: 2; }
+  .events   { grid-column: 1 / -1; grid-row: 3; }
+}
+</style>
+</head>
+<body>
+
+<!-- ── HEADER ──────────────────────────────────── -->
+<header>
+  <div class="logo">
+    <div class="logo-icon">🛡</div>
+    <div class="logo-text">
+      <h1>RESILIENCIA</h1>
+      <p>SISTEMA DE ALTA DISPONIBILIDAD · UNIVERSIDAD</p>
+    </div>
+  </div>
+  <div class="header-right">
+    <span class="clock" id="clock">--:--:--</span>
+    <div class="ws-dot" id="ws-dot" title="WebSocket"></div>
+  </div>
+</header>
+
+<!-- ── DB STATUS BANNER ─────────────────────────── -->
+<div id="db-banner" class="primary">
+  <span class="db-dot"></span>
+  <span id="db-label">CONECTADO A: DB PRINCIPAL · db-principal:5432</span>
+</div>
+
+<!-- ── MAIN ────────────────────────────────────── -->
+<main>
+
+  <!-- ROW 1: Containers -->
+  <div class="containers-row">
+
+    <div class="container-card up" id="c-passbolt">
+      <div class="c-name">PASSBOLT</div>
+      <div class="c-status">
+        <span class="status-dot up"></span>
+        <span class="status-text">RUNNING</span>
+      </div>
+      <div class="c-sub">Gestor de contraseñas · :8080</div>
+    </div>
+
+    <div class="container-card up" id="c-checkmk">
+      <div class="c-name">CHECKMK</div>
+      <div class="c-status">
+        <span class="status-dot up"></span>
+        <span class="status-text">RUNNING</span>
+      </div>
+      <div class="c-sub">Monitoreo de red · :5000</div>
+    </div>
+
+    <div class="container-card up" id="c-db-principal">
+      <div class="c-name">DB PRINCIPAL</div>
+      <div class="c-status">
+        <span class="status-dot up"></span>
+        <span class="status-text">RUNNING</span>
+      </div>
+      <div class="c-sub">PostgreSQL 15 · :5432</div>
+    </div>
+
+    <div class="container-card up" id="c-db-espejo">
+      <div class="c-name">DB ESPEJO ☁</div>
+      <div class="c-status">
+        <span class="status-dot up"></span>
+        <span class="status-text">STANDBY</span>
+      </div>
+      <div class="c-sub">PostgreSQL 15 · Nube · :5433</div>
+    </div>
+
+  </div>
+
+  <!-- COL 1: Topology -->
+  <div class="card topology">
+    <div class="card-header">
+      <span class="icon">🗺</span>
+      <span class="card-title">Topología del Sistema</span>
+    </div>
+    <div class="card-body">
+      <svg class="topo-svg" viewBox="0 0 300 320" id="topo-svg">
+        <!-- Server box -->
+        <rect x="10" y="10" width="175" height="280" rx="6"
+              fill="none" stroke="#1a3a5c" stroke-width="1.5"/>
+        <text x="18" y="26" fill="#4a6a8a" font-size="9" font-family="Share Tech Mono">SERVIDOR</text>
+
+        <!-- PASSBOLT -->
+        <rect x="25" y="35" width="145" height="52" rx="4"
+              fill="#0d1520" stroke="#1a3a5c" stroke-width="1" id="svg-passbolt"/>
+        <text x="55" y="56" fill="#c8e0f0" font-size="11" font-weight="700" font-family="Exo 2">PASSBOLT</text>
+        <text x="55" y="72" fill="#4a6a8a" font-size="9" font-family="Share Tech Mono">:8080</text>
+        <circle cx="38" cy="61" r="5" fill="#00ff88" id="dot-passbolt"/>
+
+        <!-- CHECKMK -->
+        <rect x="25" y="105" width="145" height="52" rx="4"
+              fill="#0d1520" stroke="#1a3a5c" stroke-width="1" id="svg-checkmk"/>
+        <text x="55" y="126" fill="#c8e0f0" font-size="11" font-weight="700" font-family="Exo 2">CHECKMK</text>
+        <text x="55" y="142" fill="#4a6a8a" font-size="9" font-family="Share Tech Mono">:5000</text>
+        <circle cx="38" cy="131" r="5" fill="#00ff88" id="dot-checkmk"/>
+
+        <!-- DB PRINCIPAL -->
+        <rect x="25" y="190" width="145" height="80" rx="4"
+              fill="#0d1520" stroke="#1a3a5c" stroke-width="1" id="svg-db-principal"/>
+        <text x="55" y="215" fill="#c8e0f0" font-size="11" font-weight="700" font-family="Exo 2">DB PRINCIPAL</text>
+        <text x="55" y="231" fill="#4a6a8a" font-size="9" font-family="Share Tech Mono">PostgreSQL :5432</text>
+        <text x="55" y="247" fill="#4a6a8a" font-size="9" font-family="Share Tech Mono">db-principal</text>
+        <circle cx="38" cy="230" r="5" fill="#00ff88" id="dot-db-principal"/>
+
+        <!-- Lines PASSBOLT→DB -->
+        <line x1="97" y1="87" x2="97" y2="105" stroke="#1a3a5c" stroke-width="1" stroke-dasharray="4,2"/>
+        <!-- Lines CHECKMK→DB -->
+        <line x1="97" y1="157" x2="97" y2="190" stroke="#1a3a5c" stroke-width="1" stroke-dasharray="4,2"/>
+
+        <!-- Arrow DB→ESPEJO -->
+        <line x1="170" y1="230" x2="218" y2="230" stroke="#00d4ff" stroke-width="1.5"
+              stroke-dasharray="5,3" id="sync-line">
+          <animate attributeName="stroke-dashoffset" from="0" to="-16"
+                   dur="1s" repeatCount="indefinite"/>
+        </line>
+        <polygon points="220,226 228,230 220,234" fill="#00d4ff" id="sync-arrow"/>
+
+        <!-- NUBE box -->
+        <rect x="230" y="170" width="62" height="120" rx="6"
+              fill="none" stroke="#1a3a5c" stroke-width="1"/>
+        <text x="234" y="184" fill="#4a6a8a" font-size="8" font-family="Share Tech Mono">NUBE ☁</text>
+
+        <!-- DB ESPEJO -->
+        <rect x="233" y="190" width="56" height="82" rx="4"
+              fill="#0d1520" stroke="#1a3a5c" stroke-width="1" id="svg-db-espejo"/>
+        <text x="261" y="218" fill="#c8e0f0" font-size="9" font-weight="700"
+              font-family="Exo 2" text-anchor="middle">DB</text>
+        <text x="261" y="232" fill="#c8e0f0" font-size="9" font-weight="700"
+              font-family="Exo 2" text-anchor="middle">ESPEJO</text>
+        <text x="261" y="248" fill="#4a6a8a" font-size="8" font-family="Share Tech Mono"
+              text-anchor="middle">:5433</text>
+        <circle cx="244" cy="200" r="4" fill="#00d4ff" id="dot-db-espejo"/>
+
+        <!-- Active connection indicator -->
+        <rect x="10" y="296" width="175" height="1" fill="#1a3a5c"/>
+        <text x="13" y="308" fill="#4a6a8a" font-size="8" font-family="Share Tech Mono">CONEXIÓN ACTIVA:</text>
+        <text x="13" y="320" fill="#00ff88" font-size="9" font-family="Share Tech Mono" id="topo-active">→ DB PRINCIPAL</text>
+      </svg>
+    </div>
+  </div>
+
+  <!-- COL 2: Backups -->
+  <div class="card backups">
+    <div class="card-header">
+      <span class="icon">💾</span>
+      <span class="card-title">Backups Incrementales</span>
+    </div>
+    <div class="card-body">
+      <div class="backup-header">
+        <span>TIMESTAMP (UTC)</span>
+        <span style="text-align:right">TAMAÑO</span>
+        <span style="text-align:right">TIEMPO</span>
+      </div>
+      <div id="backup-list">
+        <div style="color:var(--muted);font-family:var(--font-mono);font-size:11px;padding:20px 0;text-align:center">
+          Esperando primer backup...
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- COL 3: Event log -->
+  <div class="card events">
+    <div class="card-header">
+      <span class="icon">📋</span>
+      <span class="card-title">Log de Eventos</span>
+    </div>
+    <div class="card-body" id="event-log">
+      <div style="color:var(--muted);font-family:var(--font-mono);font-size:11px;padding:20px 0;text-align:center">
+        Conectando al servidor de eventos...
+      </div>
+    </div>
+  </div>
+
+</main>
+
+<!-- ── TOAST ─────────────────────────────────────── -->
+<div id="toast"></div>
+
+<script>
+// ── Clock ────────────────────────────────────────
+function updateClock() {
+  document.getElementById("clock").textContent =
+    new Date().toISOString().replace("T"," ").slice(0,19) + " UTC";
+}
+setInterval(updateClock, 1000); updateClock();
+
+// ── WebSocket ────────────────────────────────────
+const API = window.location.hostname === "localhost"
+  ? "http://localhost:3001"
+  : `http://${window.location.hostname}:3001`;
+
+const socket = io(API);
+const wsDot  = document.getElementById("ws-dot");
+
+socket.on("connect", () => {
+  wsDot.classList.add("connected");
+  addLogEntry("info", "Conectado al servidor de eventos", new Date().toISOString());
+});
+socket.on("disconnect", () => {
+  wsDot.classList.remove("connected");
+  addLogEntry("error", "Desconectado del servidor de eventos", new Date().toISOString());
+});
+
+socket.on("state", applyState);
+socket.on("event", handleEvent);
+
+// ── Cargar estado inicial ────────────────────────
+fetch(`${API}/api/state`)
+  .then(r => r.json())
+  .then(applyState)
+  .catch(() => {});
+
+// ── Aplicar estado completo ──────────────────────
+function applyState(state) {
+  updateDbBanner(state.currentDb || "primary");
+  updateTopology(state.currentDb || "primary");
+
+  if (state.lastBackups && state.lastBackups.length) {
+    document.getElementById("backup-list").innerHTML = "";
+    state.lastBackups.forEach(b => appendBackupRow(b));
+  }
+
+  if (state.lastEvents && state.lastEvents.length) {
+    document.getElementById("event-log").innerHTML = "";
+    state.lastEvents.slice().reverse().forEach(e => addLogEntry(
+      eventBadge(e.type), eventMsg(e), e.timestamp || e.receivedAt
+    ));
+  }
+}
+
+// ── Handle single incoming event ─────────────────
+function handleEvent(e) {
+  switch(e.type) {
+    case "backup_done":
+      appendBackupRow(e);
+      addLogEntry("backup", `Backup OK — ${e.filename} (${e.size_kb} KB, ${e.elapsed}s)`, e.timestamp);
+      break;
+    case "backup_start":
+      addLogEntry("backup", "Iniciando backup incremental...", e.timestamp);
+      break;
+    case "backup_error":
+      addLogEntry("error", `Backup fallido: ${e.error || "error desconocido"}`, e.timestamp);
+      break;
+    case "failover":
+      handleFailover(e);
+      addLogEntry("failover",
+        `Failover ${e.direction} completado en ${e.elapsed}s`, e.timestamp);
+      break;
+    case "container_status":
+      updateContainerCard(e.name, e.status);
+      addLogEntry("container", `${e.name}: ${e.status}`, e.timestamp);
+      break;
+    case "agent_start":
+      addLogEntry("info", "Failover agent iniciado", e.timestamp);
+      break;
+    case "error":
+      addLogEntry("error", e.message || "Error del sistema", e.timestamp);
+      break;
+  }
+}
+
+// ── DB Banner & Topology ─────────────────────────
+function updateDbBanner(which) {
+  const banner = document.getElementById("db-banner");
+  const label  = document.getElementById("db-label");
+  banner.className = which;
+  label.textContent = which === "primary"
+    ? "CONECTADO A: DB PRINCIPAL · db-principal:5432"
+    : "⚠ CONECTADO A: DB ESPEJO (NUBE) · :5433 — Principal INACTIVA";
+}
+
+function updateTopology(which) {
+  const syncLine  = document.getElementById("sync-line");
+  const topoActive = document.getElementById("topo-active");
+  const dbPBox    = document.getElementById("svg-db-principal");
+  const dbEBox    = document.getElementById("svg-db-espejo");
+
+  if (which === "primary") {
+    syncLine.setAttribute("stroke", "#00d4ff");
+    topoActive.textContent = "→ DB PRINCIPAL";
+    topoActive.setAttribute("fill", "#00ff88");
+    dbPBox.setAttribute("stroke", "#00ff88");
+    dbEBox.setAttribute("stroke", "#1a3a5c");
+  } else {
+    syncLine.setAttribute("stroke", "#ff2d55");
+    topoActive.textContent = "→ DB ESPEJO (NUBE)";
+    topoActive.setAttribute("fill", "#ff2d55");
+    dbPBox.setAttribute("stroke", "#ff2d55");
+    dbEBox.setAttribute("stroke", "#ff2d55");
+  }
+}
+
+function handleFailover(e) {
+  const which = e.direction === "primary→mirror" ? "mirror" : "primary";
+  updateDbBanner(which);
+  updateTopology(which);
+  showToast(e);
+}
+
+function showToast(e) {
+  const toast = document.getElementById("toast");
+  const isPrimaryDown = e.direction === "primary→mirror";
+  toast.style.borderColor = isPrimaryDown ? "var(--red)" : "var(--green)";
+  toast.style.color = isPrimaryDown ? "var(--red)" : "var(--green)";
+  toast.innerHTML = isPrimaryDown
+    ? `⚠ FAILOVER ACTIVADO<br><small>DB Principal caída. Conectado a DB Espejo.<br>Tiempo: ${e.elapsed}s</small>`
+    : `✓ DB PRINCIPAL RESTAURADA<br><small>Reconectado automáticamente en ${e.elapsed}s</small>`;
+  toast.classList.add("show");
+  setTimeout(() => toast.classList.remove("show"), 6000);
+}
+
+// ── Container cards ──────────────────────────────
+function updateContainerCard(name, status) {
+  const map = {
+    "passbolt":      "c-passbolt",
+    "checkmk":       "c-checkmk",
+    "db-principal":  "c-db-principal",
+    "db-espejo":     "c-db-espejo",
+  };
+  const id = map[name]; if (!id) return;
+  const card = document.getElementById(id); if (!card) return;
+  const isUp = status === "running" || status === "up" || status === "standby";
+  card.className = `container-card ${isUp ? "up" : "down"}`;
+  const dot  = card.querySelector(".status-dot");
+  const txt  = card.querySelector(".status-text");
+  dot.className  = `status-dot ${isUp ? "up" : "down"}`;
+  txt.textContent = status.toUpperCase();
+}
+
+// ── Backup list ──────────────────────────────────
+function appendBackupRow(b) {
+  const list = document.getElementById("backup-list");
+  // Remove placeholder
+  const ph = list.querySelector("div[style]");
+  if (ph) ph.remove();
+
+  const row = document.createElement("div");
+  row.className = "backup-row";
+  const ts = b.timestamp ? b.timestamp.replace("T"," ").slice(0,19) : "—";
+  const isOk = b.type === "backup_done";
+  row.innerHTML = `
+    <span class="${isOk ? "backup-ok" : "backup-err"}">${ts}</span>
+    <span class="backup-size">${b.size_kb ? b.size_kb+" KB" : "—"}</span>
+    <span class="backup-elapsed">${b.elapsed ? b.elapsed+"s" : "—"}</span>
+  `;
+  list.prepend(row);
+  // keep max 100
+  while (list.children.length > 100) list.lastChild.remove();
+}
+
+// ── Event log ────────────────────────────────────
+function addLogEntry(badge, msg, ts) {
+  const log = document.getElementById("event-log");
+  const ph  = log.querySelector("div[style]");
+  if (ph) ph.remove();
+
+  const entry = document.createElement("div");
+  entry.className = "log-entry";
+  const time = ts ? ts.replace("T"," ").slice(11,19) : "--:--:--";
+  entry.innerHTML = `
+    <span class="log-ts">${time}</span>
+    <span class="log-badge badge-${badge}">${badge.toUpperCase()}</span>
+    <span class="log-msg">${msg}</span>
+  `;
+  log.prepend(entry);
+  while (log.children.length > 200) log.lastChild.remove();
+}
+
+function eventBadge(type) {
+  if (type?.startsWith("backup")) return "backup";
+  if (type === "failover") return "failover";
+  if (type === "container_status") return "container";
+  if (type === "error") return "error";
+  return "info";
+}
+function eventMsg(e) {
+  switch(e.type) {
+    case "backup_done":  return `Backup OK — ${e.filename||""} (${e.size_kb||"?"}KB, ${e.elapsed||"?"}s)`;
+    case "backup_start": return "Iniciando backup incremental...";
+    case "backup_error": return `Error en backup: ${e.error||"desconocido"}`;
+    case "failover":     return `Failover ${e.direction} completado en ${e.elapsed}s`;
+    case "agent_start":  return "Failover agent iniciado";
+    case "error":        return e.message || "Error desconocido";
+    default:             return JSON.stringify(e);
+  }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,30 @@
+version: "3.9"
+
+volumes:
+  db_espejo_data:
+
+services:
+
+  # ─────────────────────────────────────────────
+  # DB ESPEJO (PostgreSQL en la Nube)
+  # ─────────────────────────────────────────────
+  db-espejo:
+    image: postgres:15
+    container_name: db-espejo
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DB_MIRROR_USER}
+      POSTGRES_PASSWORD: ${DB_MIRROR_PASSWORD}
+      POSTGRES_DB: ${DB_NAME}
+    volumes:
+      - db_espejo_data:/var/lib/postgresql/data
+      - ./pg_hba_custom.conf:/etc/postgresql/pg_hba_append.conf:ro
+    ports:
+      - "5433:5432"         # Expuesto en puerto 5433 al exterior
+    command: >
+      postgres
+      -c listen_addresses='*'
+      -c wal_level=replica
+      -c max_wal_senders=5
+      -c wal_keep_size=64
+      -c hot_standby=on

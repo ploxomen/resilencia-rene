@@ -1,0 +1,160 @@
+version: "3.9"
+
+networks:
+  resiliencia-net:
+    driver: bridge
+
+volumes:
+  db_principal_data:
+  passbolt_data:
+  checkmk_data:
+
+services:
+
+  # ─────────────────────────────────────────────
+  # DB PRINCIPAL (PostgreSQL)
+  # ─────────────────────────────────────────────
+  db-principal:
+    image: postgres:15
+    container_name: db-principal
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${DB_NAME}
+    volumes:
+      - db_principal_data:/var/lib/postgresql/data
+      - ./init:/docker-entrypoint-initdb.d
+    networks:
+      - resiliencia-net
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ─────────────────────────────────────────────
+  # PASSBOLT
+  # ─────────────────────────────────────────────
+  passbolt:
+    image: passbolt/passbolt:latest-ce
+    container_name: passbolt
+    restart: unless-stopped
+    depends_on:
+      db-principal:
+        condition: service_healthy
+    environment:
+      APP_FULL_BASE_URL: https://localhost
+      DATASOURCES_DEFAULT_HOST: db-principal
+      DATASOURCES_DEFAULT_PORT: 5432
+      DATASOURCES_DEFAULT_USERNAME: ${DB_USER}
+      DATASOURCES_DEFAULT_PASSWORD: ${DB_PASSWORD}
+      DATASOURCES_DEFAULT_DATABASE: passbolt_db
+      EMAIL_TRANSPORT_DEFAULT_HOST: ${SMTP_HOST}
+      EMAIL_TRANSPORT_DEFAULT_PORT: ${SMTP_PORT}
+      EMAIL_TRANSPORT_DEFAULT_USERNAME: ${SMTP_USER}
+      EMAIL_TRANSPORT_DEFAULT_PASSWORD: ${SMTP_PASS}
+      EMAIL_DEFAULT_FROM: ${SMTP_FROM}
+    volumes:
+      - passbolt_data:/etc/passbolt
+    networks:
+      - resiliencia-net
+    ports:
+      - "8080:80"
+      - "8443:443"
+
+  # ─────────────────────────────────────────────
+  # CHECKMK
+  # ─────────────────────────────────────────────
+  checkmk:
+    image: checkmk/check-mk-raw:2.3.0-latest
+    container_name: checkmk
+    restart: unless-stopped
+    depends_on:
+      db-principal:
+        condition: service_healthy
+    environment:
+      CMK_SITE_ID: monitoring
+      CMK_PASSWORD: ${CMK_PASSWORD}
+    volumes:
+      - checkmk_data:/omd/sites
+    networks:
+      - resiliencia-net
+    ports:
+      - "5000:5000"
+
+  # ─────────────────────────────────────────────
+  # MONITOR / FAILOVER AGENT
+  # ─────────────────────────────────────────────
+  failover-agent:
+    build:
+      context: ./failover-agent
+    container_name: failover-agent
+    restart: always
+    depends_on:
+      - db-principal
+    environment:
+      DB_HOST_PRIMARY: db-principal
+      DB_HOST_MIRROR: ${DB_MIRROR_HOST}
+      DB_PORT: 5432
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+      DB_NAME: ${DB_NAME}
+      SMTP_HOST: ${SMTP_HOST}
+      SMTP_PORT: ${SMTP_PORT}
+      SMTP_USER: ${SMTP_USER}
+      SMTP_PASS: ${SMTP_PASS}
+      ADMIN_EMAIL: ${ADMIN_EMAIL}
+      DASHBOARD_API_URL: http://dashboard:3001
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./logs:/app/logs
+    networks:
+      - resiliencia-net
+
+  # ─────────────────────────────────────────────
+  # BACKUP AGENT (incremental every 2 min)
+  # ─────────────────────────────────────────────
+  backup-agent:
+    build:
+      context: ./backup-agent
+    container_name: backup-agent
+    restart: always
+    depends_on:
+      db-principal:
+        condition: service_healthy
+    environment:
+      DB_HOST: db-principal
+      DB_PORT: 5432
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+      DB_NAME: ${DB_NAME}
+      MIRROR_HOST: ${DB_MIRROR_HOST}
+      MIRROR_PORT: ${DB_MIRROR_PORT}
+      MIRROR_USER: ${DB_MIRROR_USER}
+      MIRROR_PASSWORD: ${DB_MIRROR_PASSWORD}
+      BACKUP_INTERVAL_SECONDS: 120
+      DASHBOARD_API_URL: http://dashboard:3001
+    volumes:
+      - ./backups:/backups
+      - ./logs:/app/logs
+    networks:
+      - resiliencia-net
+
+  # ─────────────────────────────────────────────
+  # DASHBOARD
+  # ─────────────────────────────────────────────
+  dashboard:
+    build:
+      context: ./dashboard
+    container_name: dashboard
+    restart: always
+    volumes:
+      - ./logs:/app/logs
+    networks:
+      - resiliencia-net
+    ports:
+      - "3000:3000"
+      - "3001:3001"
